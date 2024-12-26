@@ -1,0 +1,92 @@
+import openai
+from elevenlabs import generate, play, set_api_key, Voice
+import speech_recognition as sr
+import pyaudio
+import os
+
+
+os.environ["PATH"] += ";C:\\ffmpeg\\bin"
+
+
+# Set up your API keys
+openai.api_key = (‘openaikey’)
+set_api_key('')
+
+
+def detect_wake_word(text):
+    return "jarvis" in text.lower()
+
+
+def get_chatgpt_response(prompt):
+    response = openai.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=150,
+        temperature=0.5
+    )
+    return response.choices[0].message.content.strip()
+
+
+def synthesize_speech(text):
+    try:
+        print("Generating audio...")
+        audio = generate(
+            text=text,
+            voice="Chris",
+            model="eleven_monolingual_v1"
+        )
+       
+        print("Playing audio...")
+        play(audio)
+       
+    except Exception as e:
+        print(f"Error in speech synthesis: {str(e)}")
+
+
+def listen_for_wake_word():
+    recognizer = sr.Recognizer()
+    mic = sr.Microphone()
+
+
+    with mic as source:
+        print("Listening for wake word...")
+        audio = recognizer.listen(source)
+
+
+    try:
+        text = recognizer.recognize_google(audio)
+        print(f"Recognized: {text}")
+        return text
+    except sr.UnknownValueError:
+        print("Could not understand audio")
+        return ""
+    except sr.RequestError as e:
+        print(f"Could not request results; {e}")
+        return ""
+
+
+def main():
+    while True:
+        text = listen_for_wake_word()
+        if detect_wake_word(text):
+            print("Wake word detected. Listening for command...")
+            with sr.Microphone() as source:
+                audio = sr.Recognizer().listen(source)
+                try:
+                    command = sr.Recognizer().recognize_google(audio)
+                    print(f"Command: {command}")
+                    response = get_chatgpt_response(command)
+                    print(f"Response: {response}")
+                    synthesize_speech(response)
+                except sr.UnknownValueError:
+                    print("Could not understand command")
+                except sr.RequestError as e:
+                    print(f"Could not request results; {e}")
+
+
+if __name__ == "__main__":
+    main()
+
