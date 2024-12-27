@@ -1,0 +1,119 @@
+import openai
+from elevenlabs import generate, play, set_api_key, Voice
+import speech_recognition as sr
+import pyaudio
+import os
+import requests
+
+os.environ["PATH"] += ";C:\\ffmpeg\\bin"
+
+# Set up your API keys
+openai.api_key = ''
+set_api_key('')
+
+def detect_wake_word(text):
+    return "jarvis" in text.lower()
+
+# Add this function to get weather data
+def get_weather(location):
+    try:
+        # Get coordinates for location using geocoding API
+        geocode_url = f"https://geocoding-api.open-meteo.com/v1/search?name={location}&count=1&language=en&format=json"
+        geo_response = requests.get(geocode_url)
+        geo_data = geo_response.json()
+        
+        if not geo_data.get('results'):
+            return f"Sorry, I couldn't find the location: {location}"
+            
+        # Extract coordinates
+        lat = geo_data['results'][0]['latitude']
+        lon = geo_data['results'][0]['longitude']
+        
+        # Get weather data
+        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true&temperature_unit=fahrenheit"
+        weather_response = requests.get(weather_url)
+        weather_data = weather_response.json()
+        temp = weather_data['current_weather']['temperature']
+        
+        return f"The current temperature in {location} is {temp}°F"
+    except Exception as e:
+        return f"Sorry, I couldn't fetch the weather information: {str(e)}"
+
+# Modify the get_chatgpt_response function
+def get_chatgpt_response(prompt):
+    # Check if prompt is asking about weather
+    if "weather" in prompt.lower():
+        # Extract location from prompt
+        words = prompt.lower().split()
+        try:
+            loc_index = words.index("in") + 1
+            location = " ".join(words[loc_index:])
+            return get_weather(location)
+        except ValueError:
+            return "Please specify a location. For example: 'What's the weather in London?'"
+    
+    response = openai.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=150,
+        temperature=0.5
+    )
+    return response.choices[0].message.content.strip()
+
+def synthesize_speech(text):
+    try:
+        print("Generating audio...")
+        audio = generate(
+            text=text,
+            voice="Chris",
+            model="eleven_monolingual_v1"
+        )
+        
+        print("Playing audio...")
+        play(audio)
+        
+    except Exception as e:
+        print(f"Error in speech synthesis: {str(e)}")
+
+def listen_for_wake_word():
+    recognizer = sr.Recognizer()
+    mic = sr.Microphone()
+
+    with mic as source:
+        print("Listening for wake word...")
+        audio = recognizer.listen(source)
+
+    try:
+        text = recognizer.recognize_google(audio)
+        print(f"Recognized: {text}")
+        return text
+    except sr.UnknownValueError:
+        print("Could not understand audio")
+        return ""
+    except sr.RequestError as e:
+        print(f"Could not request results; {e}")
+        return ""
+
+def main():
+    while True:
+        text = listen_for_wake_word()
+        if detect_wake_word(text):
+            print("Wake word detected. Listening for command...")
+            with sr.Microphone() as source:
+                audio = sr.Recognizer().listen(source)
+                try:
+                    command = sr.Recognizer().recognize_google(audio)
+                    print(f"Command: {command}")
+                    response = get_chatgpt_response(command)
+                    print(f"Response: {response}")
+                    synthesize_speech(response)
+                except sr.UnknownValueError:
+                    print("Could not understand command")
+                except sr.RequestError as e:
+                    print(f"Could not request results; {e}")
+
+if __name__ == "__main__":
+    main()
